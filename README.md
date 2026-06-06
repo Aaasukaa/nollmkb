@@ -67,21 +67,17 @@ wiki 永不被 nollmkb 索引（避免退化为"另一个 vector DB"），两者
 
 ### ⚠️ 安全警告
 
-nollmkb 默认仅监听 `127.0.0.1`，且无需认证。如需远程访问：
+nollmkb 默认仅监听 `127.0.0.1`（只有本机能访问），且无需认证。
 
-```bash
-# 方式 1: 配合 Tailscale (推荐)
-# 在 .env 中取消注释:
-NOLLMKB_HOST=0.0.0.0
+**如需远程访问，务必绑定 Tailscale IP 而非 `0.0.0.0`**。`0.0.0.0` 会在所有网卡上同时监听——局域网、Tailscale、公网（如有）全部敞开，同一网段内任何人都能读写删除你的全部文档。
 
-# 方式 2: 加 API 密钥认证 (可选)
-NOLLMKB_API_KEY_HASH=<sha256 hash>
+正确做法：服务端跑 `tailscale ip -4` 拿到 IP（类似 `100.x.x.x`），在 `.env` 里写：
+
+```
+NOLLMKB_HOST=100.x.x.x
 ```
 
-> 生成 hash: `python3 -c "import hashlib; print(hashlib.sha256(b'你的密码').hexdigest())"`  
-> `.env` 只存 hash，不存明文密码。
-
-**绝不**在无 VPN 保护的情况下将端口暴露到公网。
+这样一来只有 Tailscale 虚拟网卡在监听，局域网网卡自动关闭。如需加一层密码保护可选 API 密钥（见场景三）。
 
 > **免责声明**：本项目为个人知识管理工具，安全防护有限。开启远程访问后，**请勿**将隐私、涉密、受法规保护的敏感文档放入可检索目录。因不当使用造成的任何数据泄露或损失，项目作者不承担责任。
 
@@ -153,7 +149,7 @@ mykb/                        ← 你建的任意文件夹
 
 | 在 .env 里写 | 默认 | 说明 |
 |-------------|------|------|
-| `NOLLMKB_HOST=0.0.0.0` | `127.0.0.1` | 想让其他电脑也访问改 `0.0.0.0` |
+| `NOLLMKB_HOST=100.x.x.x` | `127.0.0.1` | 远程访问改 Tailscale IP（`tailscale ip -4` 查看）。**不要写 `0.0.0.0`** |
 | `NOLLMKB_API_KEY_HASH=...` | (空) | 加密码保护（生成方法见场景三）|
 | `NOLLMKB_DOCS_DIR=/path/` | `../inputs` | 文档目录 |
 | `NOLLMKB_KB_DIR=/path/` | `../chromadb_storage` | ChromaDB 向量库存储 |
@@ -184,9 +180,14 @@ uv run python3 server.py
 # 服务跑在 127.0.0.1:8765，只有本机能访问
 ```
 
-**场景二：想家里其他电脑也能访问（推荐 Tailscale）**
+**场景二：希望其他电脑也能远程访问（推荐 Tailscale）**
 
-在 `.env` 里写 `NOLLMKB_HOST=0.0.0.0`。服务端跑 `tailscale ip -4` 拿 IP，其他电脑访问 `http://<IP>:8765`。
+```bash
+tailscale ip -4        # 拿到 IP（类似 100.x.x.x）
+```
+在 `.env` 里写 `NOLLMKB_HOST=100.x.x.x`（填你实际的 Tailscale IP）。其他电脑访问 `http://100.x.x.x:8765`。
+
+> **为什么不用 `0.0.0.0`**：它会同时在局域网网卡上监听，同网段任何人都能访问。绑定 Tailscale IP 只开放虚拟网卡，更安全。
 
 **场景三：还想加个密码**
 

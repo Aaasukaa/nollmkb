@@ -9,6 +9,8 @@ IP:   <your-server>
 认证: 可选 Bearer token (sha256 hash, NOLLMKB_API_KEY_HASH)
 ```
 
+> **安全提示**：远程访问时把 `NOLLMKB_HOST` 设为 Tailscale IP（如 `100.x.x.x`），不要用 `0.0.0.0`。`0.0.0.0` 会同时在局域网上开放，同网段内任何人都能访问。
+
 ### 认证
 
 nollmkb 默认任何人都能访问（仅限本机 `127.0.0.1`）。如果想远程访问并加一道密码：
