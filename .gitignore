@@ -1,0 +1,41 @@
+# ChromaDB 向量库
+rag_storage/
+chromadb_storage/
+
+# 原始文档
+inputs/
+
+# 日志
+logs/
+*.log
+*.log.*
+nohup.out
+*.swp
+*.swo
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# 环境配置
+.env
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# 凭据
+*.pem
+*.key
+secrets.*
