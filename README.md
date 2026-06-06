@@ -96,8 +96,10 @@ git clone <repo-url> nollmkb
 cd nollmkb
 uv sync
 
-# 2. 配置 (可选)
-cp .env.example .env   # 按需编辑 host/api_key 等
+# 2. 配置 (可选, 选一种即可)
+cp .env.example .env   # 手动编辑
+# 或运行交互式配置向导:
+uv run python3 scripts/setup.py
 
 # 3. 拉模型 (首次自动从 HuggingFace 下载, ~1.2 GB)
 # 不用手动跑, 启动时自动加载 BAAI/bge-m3
@@ -119,7 +121,8 @@ cd nollmkb
 uv sync
 
 # 2. 配置 (可选)
-Copy-Item .env.example .env   # 按需编辑 host/api_key 等
+Copy-Item .env.example .env
+# 或: uv run python3 scripts/setup.py
 
 # 3. 启动
 uv run python3 server.py
