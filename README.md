@@ -45,9 +45,7 @@ wiki 永不被 nollmkb 索引（避免退化为"另一个 vector DB"），两者
 
 ## 定位
 
-大多数本地 RAG 项目往上加 LLM、加 UI、加 Docker 变成平台。nollmkb 往下走——纯 API、零认证、与LLM完全解耦，BGE-M3 做 embedding + Reranker 排序，通过你自己的任何 LLM agent 本地或远程查询你的知识库，并积累wiki笔记(可选)。Wiki 子系统补齐了"查完就忘"的短板，让检索结果可累积、可溯源、可关联。
-
-个人观点：我建库就是为了省Token，所以不接受用LLM建库，现有项目不能完全覆盖我的需求，所以有了此项目。
+大多数本地 RAG 项目往上加 LLM、加 UI、加 Docker 变成平台。nollmkb 往下走——纯 API、与LLM完全解耦，本地部署BGE-M3 做 embedding + Reranker 排序，通过你自己的任何 LLM agent 本地或远程查询你的知识库，并积累wiki笔记(可选)。Wiki 子系统补齐了"查完就忘"的短板，让检索结果可累积、可溯源、可关联。。
 
 ```
                 有 LLM（重）          无 LLM（轻）
@@ -61,7 +59,7 @@ wiki 永不被 nollmkb 索引（避免退化为"另一个 vector DB"），两者
 
 - Python >= 3.11
 - **GPU (推荐)**: 4+ GB VRAM (BGE-M3 1.3 GB + Reranker 2 GB + PyTorch 开销)
-- **CPU (可用)**: 在 `.env` 中设置 `NOLLMKB_DEVICE=cpu`，查询延迟显著增加
+- **CPU (不推荐)**: 在 `.env` 中设置 `NOLLMKB_DEVICE=cpu`，查询延迟显著增加
 - `uv` (推荐) 或 `pip` 管理依赖
 - **支持平台**: Linux / macOS / Windows（`.env` 配置方式三平台通用）
 
@@ -157,17 +155,17 @@ mykb/                        ← 你建的任意文件夹
 | `NOLLMKB_HASH_FILE=/path/` | `<KB_DIR>/file_hashes.json` | 入库去重缓存 |
 | `NOLLMKB_COLLECTION=nollmkb` | `nollmkb` | ChromaDB collection 名 |
 | `NOLLMKB_LOG_DIR=/path/` | `../logs` | 日志目录 |
-| `NOLLMKB_DEVICE=cpu` | `cuda` | 没显卡改成 `cpu`（会慢）|
+| `NOLLMKB_DEVICE=cpu` | `cuda` | 没显卡改成 `cpu`（不推荐）|
 
 ### 进阶：修改代码常量
 
 `config.py` 中还有一组不受 `.env` 控制的常量，需要直接改源码：
 
 ```python
-EMBED_MODEL = "BAAI/bge-m3"   # embedding 模型
+EMBED_MODEL = "BAAI/bge-m3"   # embedding 模型，和rerank模型一样可自定义
 CHUNK_SIZE = 1500             # 分块大小，每次查询命中返回的文字长度
 CHUNK_OVERLAP = 100           # 块重叠字符数
-EMBED_BATCH = 128             # embedding 批次大小（显存较小时请最小修改到1,但是第一次建立向量库会比较慢）
+EMBED_BATCH = 128             # embedding 批次大小（该数字仅在初次建立向量库时生效，过大会占用较多显存,过小第一次建立向量库会比较慢）
 TOP_K = 5                     # 查询返回数
 ```
 
@@ -432,11 +430,14 @@ nollmkb/
 
 ### 入库
 
-| 操作 | 判断逻辑 |
-|------|---------|
-| 同名同 hash | 跳过（零消耗） |
-| 同名不同 hash | 删旧 chunk → 重新解析入库 |
-| 新文件 | 解析 → 分块 → BGE-M3 向量化 → 入库 |
+启动时自动扫描 `inputs/`，三级缓存判断，只处理有变化的文件：
+
+| 层级 | 判断条件 | 动作 |
+|------|---------|------|
+| L1 | mtime + size 不变 | 跳过（文件都不打开，最快） |
+| L2 | mtime 变了但 hash 不变 | 跳过（文件被 touch 过，内容未改） |
+| L3 | hash 变了 | 重新解析 → 分块 → BGE-M3 向量化 → 覆盖入库 |
+| 新 | 无缓存记录 | 解析 → 分块 → BGE-M3 向量化 → 入库 |
 
 入库后自动重建 BM25 索引。
 
