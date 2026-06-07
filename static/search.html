@@ -92,7 +92,7 @@ document.getElementById("search-form").onsubmit = async (e) => {
     // search mode + rerank
     const mode = document.querySelector('input[name="mode"]:checked').value;
     if (mode === "hybrid") { body.bm25 = true; }
-    else if (mode === "keyword") { body.bm25 = true; }
+    else if (mode === "keyword") { body.bm25 = true; body.vector = false; }
     else { body.bm25 = false; }
     body.rerank = document.getElementById("rerank").checked;
     if (document.getElementById("context").checked) body.context = true;
@@ -118,7 +118,9 @@ document.getElementById("search-form").onsubmit = async (e) => {
         <small style="color:${h.score > 0.7 ? 'green' : h.score > 0.4 ? 'orange' : 'red'}">
           ${h.score.toFixed(4)}
         </small>
+        ${h.context_before ? `<small style="color:#999">…${h.context_before}</small>` : ""}
         <div id="text-${i}" class="chunk-text collapsed">${h.text}</div>
+        ${h.context_after ? `<small style="color:#999">${h.context_after}…</small>` : ""}
         ${h.text.length > 300 ? `<a href="#" onclick="toggleText(${i});return false" id="toggle-${i}">展开全文</a>` : ""}
         <small>${h.source}</small>
       </article>

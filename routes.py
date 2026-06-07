@@ -9,7 +9,8 @@ from fastapi.responses import JSONResponse
 
 from models import QueryRequest
 from reranker import get_reranker
-from bm25 import _bm25, _tokenize, rebuild_bm25, remove_from_bm25, reset_bm25, _ensure_bm25
+from bm25 import _tokenize, rebuild_bm25, remove_from_bm25, reset_bm25, _ensure_bm25
+import bm25  # use bm25._bm25 for mutable module attribute
 from hash_db import load_hashes, save_hashes, file_hash
 from parsers import EXTRACTORS, TEXT_EXTS
 from config import DOCS_DIR, HASH_VERSION, COLLECTION_NAME
@@ -182,7 +183,6 @@ def _do_query(req: QueryRequest) -> dict:
         else:
             where = {"$and": [{k: v} for k, v in req.filters.items()]}
 
-    results = col.query(query_texts=[req.text], n_results=n * 3, where=where)
     candidates = []
     seen = set()
 
@@ -193,15 +193,17 @@ def _do_query(req: QueryRequest) -> dict:
         seen.add(key)
         candidates.append({"source": source, "chunk": chunk, "score": score, "text": doc})
 
-    for doc, meta, dist in zip(results["documents"][0], results["metadatas"][0], results["distances"][0]):
-        if req.dir and not meta["source"].startswith(req.dir + "/"):
-            continue
-        _add(doc, meta["source"], meta["chunk"], round(1 - dist, 4))
+    if req.vector:
+        results = col.query(query_texts=[req.text], n_results=n * 3, where=where)
+        for doc, meta, dist in zip(results["documents"][0], results["metadatas"][0], results["distances"][0]):
+            if req.dir and not meta["source"].startswith(req.dir + "/"):
+                continue
+            _add(doc, meta["source"], meta["chunk"], round(1 - dist, 4))
 
     if req.bm25:
         _ensure_bm25()
-    state = _bm25
-    if state is not None:
+    state = bm25._bm25
+    if state is not None and req.bm25:
         bm25_idx, bm25_meta, bm25_texts = state
         terms = _tokenize(req.text)
         bm_results = list(bm25_idx.search(terms, n * 2))

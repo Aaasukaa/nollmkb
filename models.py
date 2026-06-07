@@ -11,3 +11,4 @@ class QueryRequest(BaseModel):
     rerank: bool = True
     context: bool = False
     bm25: bool = True
+    vector: bool = True
