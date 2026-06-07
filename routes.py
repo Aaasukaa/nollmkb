@@ -136,11 +136,38 @@ async def upload(files: list[UploadFile] = File(...)):
     }
 
 
+from config import SCAN_STATUS
+
 @router.post("/scan")
 def scan_api():
-    total, skipped, col = do_scan()
-    rebuild_bm25(col)
-    return {"status": "ok", "files_processed": total, "files_skipped": skipped, "total_chunks": col.count()}
+    if SCAN_STATUS["running"]:
+        return JSONResponse({"error": "scan already in progress"}, 409)
+    SCAN_STATUS["running"] = True
+    SCAN_STATUS["current"] = 0
+    SCAN_STATUS["total"] = 0
+    SCAN_STATUS["current_file"] = ""
+    try:
+        total, skipped, col = do_scan()
+        rebuild_bm25(col)
+        SCAN_STATUS["last_result"] = f"{total} new, {skipped} skipped"
+        return {"status": "ok", "files_processed": total, "files_skipped": skipped, "total_chunks": col.count()}
+    finally:
+        SCAN_STATUS["running"] = False
+
+
+@router.get("/scan/status")
+def scan_status():
+    return SCAN_STATUS
+
+
+@router.get("/scan/pending")
+def scan_pending():
+    count = 0
+    for root, _, files in os.walk(DOCS_DIR):
+        for f in files:
+            if not f.startswith(".") and not f.startswith("~$"):
+                count += 1
+    return {"pending": count}
 
 
 def _do_query(req: QueryRequest) -> dict:

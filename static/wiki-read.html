@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>nollmkb - 阅读</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+</head>
+<body data-page="wiki">
+<nav class="container-fluid">
+  <ul><li><strong>nollmkb</strong></li></ul>
+  <ul>
+    <li><a href="/ui/search.html" data-page="search">搜索</a></li>
+    <li><a href="/ui/wiki-list.html" data-page="wiki">Wiki</a></li>
+    <li><a href="/ui/documents.html" data-page="docs">文档</a></li>
+    <li id="nav-login"><a href="/ui/login.html">登录</a></li>
+  </ul>
+</nav>
+<main class="container">
+  <div id="content"></div>
+</main>
+<div id="status-bar" style="position:fixed;bottom:0;width:100%;background:#f8f8f8;padding:4px 12px;font-size:12px;color:#666"></div>
+<script src="/ui/shared.js"></script>
+<script>
+async function load() {
+  const topic = new URLSearchParams(window.location.search).get("topic");
+  if (!topic) { document.getElementById("content").innerHTML = "<p>缺少参数 topic</p>"; return; }
+  try {
+    const r = await fetch(BASE + "/wiki/page?topic=" + encodeURIComponent(topic), { headers: authHeaders() });
+    const d = await r.json();
+    let html = `<h2>${d.frontmatter?.title || topic}</h2>`;
+    if (d.frontmatter?.tags) html += `<p>标签: ${d.frontmatter.tags.join(", ")}</p>`;
+    html += `<a href="/ui/wiki-edit.html?topic=${encodeURIComponent(topic)}"><button>编辑</button></a><hr>`;
+    let body = d.content;
+    const fmEnd = body.indexOf("\n---\n");
+    if (fmEnd !== -1) body = body.slice(fmEnd + 5);
+    html += `<pre style="white-space:pre-wrap">${body.trim()}</pre>`;
+    document.getElementById("content").innerHTML = html;
+  } catch(e) { document.getElementById("content").innerHTML = "<p style='color:red'>加载失败</p>"; }
+}
+load();
+</script>
+</body>
+</html>

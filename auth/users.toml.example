@@ -1,0 +1,5 @@
+# auth/users.toml.example — copy to users.toml and edit
+# Generate hash: python3 -c "import hashlib; print(hashlib.sha256(b'password').hexdigest())"
+[users]
+# alice = "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8"  # sha256("password")
+# bob   = "6ca13d52ca70c883e0f0bb101e425a89e8624de51db2d2392593af6a84118090"  # sha256("another")

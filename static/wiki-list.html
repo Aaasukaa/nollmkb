@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>nollmkb - Wiki</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>#graph { border: 1px solid #ddd; margin-top: 20px; } .node circle { fill: #69b3a2; stroke: #333; stroke-width: 1.5px; } .link { stroke: #999; stroke-opacity: 0.6; }</style>
+</head>
+<body data-page="wiki">
+<nav class="container-fluid">
+  <ul><li><strong>nollmkb</strong></li></ul>
+  <ul>
+    <li><a href="/ui/search.html" data-page="search">搜索</a></li>
+    <li><a href="/ui/wiki-list.html" data-page="wiki">Wiki</a></li>
+    <li><a href="/ui/documents.html" data-page="docs">文档</a></li>
+    <li id="nav-login"><a href="/ui/login.html">登录</a></li>
+  </ul>
+</nav>
+<main class="container">
+  <h2>Wiki 笔记</h2>
+  <div id="wiki-pages"></div>
+  <h3>知识图谱</h3>
+  <svg id="graph" width="100%" height="400"></svg>
+</main>
+<div id="status-bar" style="position:fixed;bottom:0;width:100%;background:#f8f8f8;padding:4px 12px;font-size:12px;color:#666"></div>
+<script src="/ui/shared.js"></script>
+<script>
+async function loadWiki() {
+  try {
+    const r = await fetch(BASE + "/wiki/list", { headers: authHeaders() });
+    const d = await r.json();
+    const el = document.getElementById("wiki-pages");
+    if (!d.topics || d.topics.length === 0) {
+      el.innerHTML = "<p>暂无笔记</p>"; return;
+    }
+    el.innerHTML = `<table><thead><tr><th>标题</th><th>类型</th><th>最后验证</th><th></th></tr></thead><tbody>
+      ${d.topics.map(t => `<tr>
+        <td><a href="/ui/wiki-read.html?topic=${encodeURIComponent(t.topic)}">${t.title}</a></td>
+        <td>${t.type}</td><td>${t.last_verified}</td>
+        <td><a href="/ui/wiki-read.html?topic=${encodeURIComponent(t.topic)}">查看</a></td>
+      </tr>`).join("")}</tbody></table>`;
+
+    // Graph
+    const gr = await fetch(BASE + "/wiki/graph", { headers: authHeaders() });
+    const gd = await gr.json();
+    if (gd.nodes && gd.nodes.length > 0) drawGraph(gd);
+  } catch(e) { document.getElementById("wiki-pages").innerHTML = "<p style='color:red'>加载失败</p>"; }
+}
+
+function drawGraph(data) {
+  const svg = d3.select("#graph"), width = svg.node().clientWidth, height = 400;
+  const simulation = d3.forceSimulation(data.nodes)
+    .force("link", d3.forceLink(data.edges).id(d => d.id).distance(100))
+    .force("charge", d3.forceManyBody().strength(-300))
+    .force("center", d3.forceCenter(width / 2, height / 2));
+  const link = svg.append("g").selectAll("line").data(data.edges).join("line").attr("class", "link");
+  const node = svg.append("g").selectAll("g").data(data.nodes).join("g").call(d3.drag()
+    .on("start", (e,d) => { if(!e.active) simulation.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+    .on("drag", (e,d) => { d.fx = e.x; d.fy = e.y; })
+    .on("end", (e,d) => { if(!e.active) simulation.alphaTarget(0); d.fx = null; d.fy = null; }));
+  node.append("circle").attr("r", 8);
+  node.append("text").text(d => d.title).attr("x", 12).attr("y", 4).style("font-size","11px");
+  simulation.on("tick", () => { link.attr("x1",d=>d.source.x).attr("y1",d=>d.source.y).attr("x2",d=>d.target.x).attr("y2",d=>d.target.y); node.attr("transform",d=>`translate(${d.x},${d.y})`); });
+}
+
+loadWiki();
+</script>
+</body>
+</html>

@@ -35,7 +35,7 @@ venv/
 .idea/
 *.iml
 
-# 凭据
-*.pem
+# 用户配置
+auth/users.toml
 *.key
 secrets.*

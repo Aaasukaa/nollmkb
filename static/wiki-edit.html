@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>nollmkb - 编辑</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+<style>.readonly { background: #f0f0f0; color: #999; padding: 8px; border-radius: 4px; margin-bottom: 12px; font-family: monospace; font-size: 12px; }</style>
+</head>
+<body data-page="wiki">
+<nav class="container-fluid">
+  <ul><li><strong>nollmkb</strong></li></ul>
+  <ul>
+    <li><a href="/ui/search.html" data-page="search">搜索</a></li>
+    <li><a href="/ui/wiki-list.html" data-page="wiki">Wiki</a></li>
+    <li><a href="/ui/documents.html" data-page="docs">文档</a></li>
+    <li id="nav-login"><a href="/ui/login.html">登录</a></li>
+  </ul>
+</nav>
+<main class="container">
+  <h2>编辑笔记</h2>
+  <p class="readonly" id="fm-display">只读元数据</p>
+  <textarea id="body-editor" rows="20" style="width:100%;font-family:monospace"></textarea>
+  <button onclick="save()">保存</button>
+  <a href="#" id="back-link"><button class="secondary">取消</button></a>
+  <p id="save-msg" style="display:none"></p>
+</main>
+<div id="status-bar" style="position:fixed;bottom:0;width:100%;background:#f8f8f8;padding:4px 12px;font-size:12px;color:#666"></div>
+<script src="/ui/shared.js"></script>
+<script>
+let _topic = "", _fm = "";
+async function load() {
+  _topic = new URLSearchParams(window.location.search).get("topic");
+  document.getElementById("back-link").href = "/ui/wiki-read.html?topic=" + encodeURIComponent(_topic);
+  if (!_topic) return;
+  try {
+    const r = await fetch(BASE + "/wiki/page?topic=" + encodeURIComponent(_topic), { headers: authHeaders() });
+    const d = await r.json();
+    const content = d.content;
+    const fmEnd = content.indexOf("\n---\n");
+    if (fmEnd !== -1) {
+      _fm = content.slice(0, fmEnd + 5);
+      document.getElementById("fm-display").textContent = content.slice(0, fmEnd);
+      document.getElementById("body-editor").value = content.slice(fmEnd + 5).trim();
+    } else {
+      document.getElementById("body-editor").value = content;
+    }
+  } catch(e) { document.getElementById("save-msg").textContent = "加载失败"; document.getElementById("save-msg").style.display = "block"; document.getElementById("save-msg").style.color = "red"; }
+}
+async function save() {
+  document.getElementById("save-msg").style.display = "none";
+  const body = document.getElementById("body-editor").value;
+  const fullContent = _fm + "\n" + body;
+  try {
+    const r = await fetch(BASE + "/wiki/page", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({topic: _topic, content: fullContent, confirm: true})
+    });
+    const d = await r.json();
+    if (d.status === "ok") {
+      document.getElementById("save-msg").textContent = "保存成功";
+      document.getElementById("save-msg").style.color = "green";
+    } else {
+      document.getElementById("save-msg").textContent = mapError(d);
+      document.getElementById("save-msg").style.color = "red";
+    }
+    document.getElementById("save-msg").style.display = "block";
+  } catch(e) {
+    document.getElementById("save-msg").textContent = "保存失败";
+    document.getElementById("save-msg").style.color = "red";
+    document.getElementById("save-msg").style.display = "block";
+  }
+}
+load();
+</script>
+</body>
+</html>

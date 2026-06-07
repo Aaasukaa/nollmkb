@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>nollmkb - 文档管理</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+<style>#drop-zone { border: 2px dashed #ccc; padding: 40px; text-align: center; margin: 20px 0; border-radius: 8px; } #drop-zone.dragover { border-color: #69b3a2; background: #f0fff0; } progress { width: 100%; margin: 10px 0; }</style>
+</head>
+<body data-page="docs">
+<nav class="container-fluid">
+  <ul><li><strong>nollmkb</strong></li></ul>
+  <ul>
+    <li><a href="/ui/search.html" data-page="search">搜索</a></li>
+    <li><a href="/ui/wiki-list.html" data-page="wiki">Wiki</a></li>
+    <li><a href="/ui/documents.html" data-page="docs">文档</a></li>
+    <li id="nav-login"><a href="/ui/login.html">登录</a></li>
+  </ul>
+</nav>
+<main class="container">
+  <h2>文档管理</h2>
+  
+  <!-- Build guide overlay (shown when chunks=0) -->
+  <div id="build-guide" style="display:none">
+    <article>
+      <h3>知识库尚未建立</h3>
+      <p>请先放入文档，然后点击下方按钮开始建库。你可以：</p>
+      <ul>
+        <li>拖拽文件到下方上传区域（单个文件 ≤ 100MB）</li>
+        <li>或手动复制文档到 <code>../inputs/</code> 目录</li>
+      </ul>
+      <div id="pending-info"></div>
+      <button id="start-build">开始建库</button>
+      <progress id="build-progress" value="0" max="100" style="display:none"></progress>
+      <p id="build-status" style="display:none"></p>
+    </article>
+  </div>
+
+  <!-- Upload zone -->
+  <div id="drop-zone">
+    <p>拖拽文件到此处上传（PDF/Word/PPT/Markdown 等），或点击选择</p>
+    <input type="file" id="file-input" multiple accept=".pdf,.docx,.pptx,.xlsx,.md,.txt,.py,.json,.yaml,.toml,.html,.csv" style="display:none">
+    <button onclick="document.getElementById('file-input').click()">选择文件</button>
+  </div>
+  <p id="upload-msg"></p>
+
+  <!-- Scan button -->
+  <button id="scan-btn" onclick="startScan()">扫描入库</button>
+  <div id="scan-progress">
+    <progress id="scan-bar" value="0" max="100" style="display:none;width:100%"></progress>
+    <p id="scan-status-text"></p>
+  </div>
+
+  <!-- Document list -->
+  <h3>已入库文档</h3>
+  <table id="doc-table">
+    <thead><tr><th>文件</th><th>目录</th><th>Chunks</th><th>操作</th></tr></thead>
+    <tbody id="doc-list"></tbody>
+  </table>
+</main>
+<div id="status-bar" style="position:fixed;bottom:0;width:100%;background:#f8f8f8;padding:4px 12px;font-size:12px;color:#666"></div>
+<script src="/ui/shared.js"></script>
+<script>
+// Upload drag-drop
+const dropZone = document.getElementById("drop-zone");
+dropZone.addEventListener("dragover", e => { e.preventDefault(); dropZone.classList.add("dragover"); });
+dropZone.addEventListener("dragleave", () => dropZone.classList.remove("dragover"));
+dropZone.addEventListener("drop", async e => {
+  e.preventDefault(); dropZone.classList.remove("dragover");
+  for (const file of e.dataTransfer.files) {
+    if (file.size > 100 * 1024 * 1024) { document.getElementById("upload-msg").textContent = `${file.name} 超过 100MB 限制`; continue; }
+    const form = new FormData(); form.append("files", file);
+    const r = await fetch(BASE + "/upload", { method: "POST", headers: {Authorization: "Bearer " + getToken()}, body: form });
+    const d = await r.json();
+    document.getElementById("upload-msg").textContent = d.status === "ok" ? `${file.name} 上传成功` : `${file.name} 上传失败`;
+    loadDocs();
+  }
+});
+document.getElementById("file-input").addEventListener("change", async () => {
+  for (const file of document.getElementById("file-input").files) {
+    const form = new FormData(); form.append("files", file);
+    const r = await fetch(BASE + "/upload", { method: "POST", headers: {Authorization: "Bearer " + getToken()}, body: form });
+    document.getElementById("upload-msg").textContent = (await r.json()).status === "ok" ? `${file.name} 上传成功` : `${file.name} 上传失败`;
+  }
+  loadDocs();
+});
+
+// Document list
+async function loadDocs() {
+  try {
+    const r = await fetch(BASE + "/documents", { headers: authHeaders() });
+    const d = await r.json();
+    const list = document.getElementById("doc-list");
+    list.innerHTML = (d.documents || []).map(doc => `<tr>
+      <td>${doc.source}</td><td>${doc.dir}</td><td>${doc.chunks}</td>
+      <td><a href="#" onclick="deleteDoc('${doc.source}');return false">删除</a></td>
+    </tr>`).join("");
+  } catch(e) {}
+}
+
+async function deleteDoc(source) {
+  if (!confirm("确定删除 " + source + "？")) return;
+  const r = await fetch(BASE + "/documents?source=" + encodeURIComponent(source), { method: "DELETE", headers: authHeaders() });
+  if (r.ok) loadDocs();
+}
+
+// Scan
+let _scanPoll = null;
+async function startScan() {
+  document.getElementById("scan-btn").disabled = true;
+  document.getElementById("scan-bar").style.display = "block";
+  document.getElementById("scan-status-text").textContent = "扫描中...";
+  fetch(BASE + "/scan", { method: "POST", headers: authHeaders() });
+  _scanPoll = setInterval(async () => {
+    const r = await fetch(BASE + "/scan/status");
+    const s = await r.json();
+    document.getElementById("scan-bar").value = s.total > 0 ? (s.current / s.total) * 100 : 0;
+    document.getElementById("scan-status-text").textContent = s.running ? `[${s.current}/${s.total}] ${s.current_file}` : (s.last_result || "完成");
+    if (!s.running) { clearInterval(_scanPoll); document.getElementById("scan-btn").disabled = false; loadDocs(); }
+  }, 1000);
+}
+
+// Build guide
+async function checkBuild() {
+  try {
+    const r = await fetch(BASE + "/health");
+    const h = await r.json();
+    if (h.chunks === 0) {
+      document.getElementById("build-guide").style.display = "block";
+      const pr = await fetch(BASE + "/scan/pending");
+      const pd = await pr.json();
+      document.getElementById("pending-info").innerHTML = pd.pending > 0 ? `<p>发现 <strong>${pd.pending}</strong> 个文件待索引</p>` : "<p>尚未检测到文档</p>";
+      document.getElementById("start-build").onclick = startScan;
+    }
+  } catch(e) {}
+}
+
+loadDocs();
+checkBuild();
+</script>
+</body>
+</html>

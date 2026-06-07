@@ -22,7 +22,7 @@ import re
 import logging
 import difflib
 from pathlib import Path
-from fastapi import APIRouter, HTTPException, Query, Body
+from fastapi import APIRouter, HTTPException, Query, Body, Request
 
 # cross-platform file lock (fcntl on Unix, no-op on Windows)
 try:
@@ -37,6 +37,15 @@ except ImportError:
 
 from config import WIKI_DIR
 from hash_db import load_hashes, save_hashes, file_hash
+
+
+def _user_wiki_dir(request: Request = None) -> Path:
+    """Get wiki root dir for current user. Falls back to WIKI_DIR for single-user mode."""
+    if request is not None:
+        user = getattr(request.state, "user", "").strip()
+        if user:
+            return Path(WIKI_DIR) / user
+    return Path(WIKI_DIR)
 
 logger = logging.getLogger(__name__)
 
@@ -192,15 +201,15 @@ _DEFAULT_SKELETON = {
 
 
 def _load_protocol_file(name: str) -> dict:
-    """Load a single protocol file. Priority: local file > built-in default."""
-    local_path = Path(WIKI_DIR) / f"{name}.md"
+    """Load a single protocol file. Priority: shared/ local > built-in default."""
+    shared = Path(WIKI_DIR) / "shared"
+    local_path = shared / f"{name}.md"
     if local_path.exists():
         return {
             "source": "local",
-            "path": str(local_path.relative_to(Path(WIKI_DIR)).as_posix()),
+            "path": f"shared/{name}.md",
             "content": local_path.read_text(encoding="utf-8"),
         }
-    # fallback: builtin default (from nollmkb/wiki_templates/ or constant)
     if name in _DEFAULT_PROTOCOL:
         return {
             "source": "builtin",
@@ -240,11 +249,11 @@ def _safe_topic(topic: str) -> str:
     return topic
 
 
-def _abs_topic_path(topic: str) -> Path:
-    """Return (WIKI_DIR / topic) and verify it does not escape WIKI_DIR."""
+def _abs_topic_path(topic: str, request: Request = None) -> Path:
+    """Return (_user_wiki_dir(request) / topic) and verify it does not escape user dir."""
     safe = _safe_topic(topic)
-    path = (Path(WIKI_DIR) / safe).resolve()
-    wiki_root = Path(WIKI_DIR).resolve()
+    wiki_root = _user_wiki_dir(request).resolve()
+    path = (wiki_root / safe).resolve()
     if not str(path).startswith(str(wiki_root) + os.sep) and path != wiki_root:
         raise HTTPException(400, f"path escape: {topic}")
     return path
@@ -290,9 +299,9 @@ def _parse_frontmatter(text: str) -> dict:
     return fm
 
 
-def _scan_pages() -> list[Path]:
-    """Scan WIKI_DIR for all .md files, skipping meta files."""
-    wiki_root = Path(WIKI_DIR)
+def _scan_pages(request: Request = None) -> list[Path]:
+    """Scan user wiki dir for all .md files, skipping meta files."""
+    wiki_root = _user_wiki_dir(request)
     skip_names = {"purpose.md", "schema.md", "CLAUDE.md", "index.md", "log.md"}
     pages = []
     if not wiki_root.exists():
@@ -389,11 +398,11 @@ def _normalize_tags(tags: list) -> list[str]:
     return result
 
 
-def _collect_all_tags() -> dict[str, int]:
+def _collect_all_tags(request: Request = None) -> dict[str, int]:
     """Scan all wiki pages, collect tags with counts."""
     from collections import Counter
     counter = Counter()
-    for p in _scan_pages():
+    for p in _scan_pages(request):
         text = p.read_text(errors="replace")
         fm = _parse_frontmatter(text)
         for t in fm.get("tags", []) or []:
@@ -452,12 +461,13 @@ def _inject_tags_into_frontmatter(content: str, tags: list[str]) -> str:
 # ============== GET endpoints ==============
 
 @router.get("/list")
-def wiki_list():
+def wiki_list(request: Request):
     """List all wiki topics with frontmatter summary."""
-    pages = _scan_pages()
+    wiki_root = _user_wiki_dir(request)
+    pages = _scan_pages(request)
     items = []
     for p in pages:
-        rel = p.relative_to(Path(WIKI_DIR)).as_posix()
+        rel = p.relative_to(wiki_root).as_posix()
         text = p.read_text(errors="replace")
         fm = _parse_frontmatter(text)
         items.append({
@@ -478,15 +488,16 @@ def wiki_list():
 
 
 @router.get("/page")
-def wiki_page(topic: str = Query(..., description="relative path under wiki/, with or without .md")):
+def wiki_page(request: Request, topic: str = Query(..., description="relative path under wiki/, with or without .md")):
     """Read full page content + parsed frontmatter."""
-    path = _abs_topic_path(topic)
+    wiki_root = _user_wiki_dir(request)
+    path = _abs_topic_path(topic, request)
     if not path.exists():
         raise HTTPException(404, f"topic not found: {topic}")
     text = path.read_text(errors="replace")
     st = path.stat()
     return {
-        "topic": path.relative_to(Path(WIKI_DIR)).as_posix(),
+        "topic": path.relative_to(wiki_root).as_posix(),
         "content": text,
         "frontmatter": _parse_frontmatter(text),
         "mtime": st.st_mtime,
@@ -495,11 +506,12 @@ def wiki_page(topic: str = Query(..., description="relative path under wiki/, wi
 
 
 @router.get("/search")
-def wiki_search(q: str = Query(..., min_length=1), limit: int = Query(10, ge=1, le=50)):
+def wiki_search(request: Request, q: str = Query(..., min_length=1), limit: int = Query(10, ge=1, le=50)):
     """Keyword search frontmatter + body. Returns snippet with context."""
+    wiki_root = _user_wiki_dir(request)
     q_lower = q.lower()
     results = []
-    for p in _scan_pages():
+    for p in _scan_pages(request):
         text = p.read_text(errors="replace")
         text_lower = text.lower()
         if q_lower not in text_lower:
@@ -508,7 +520,7 @@ def wiki_search(q: str = Query(..., min_length=1), limit: int = Query(10, ge=1, 
         start = max(0, idx - 80)
         end = min(len(text), idx + len(q) + 80)
         snippet = text[start:end].replace("\n", " ")
-        rel = p.relative_to(Path(WIKI_DIR)).as_posix()
+        rel = p.relative_to(wiki_root).as_posix()
         fm = _parse_frontmatter(text)
         results.append({
             "topic": rel,
@@ -522,19 +534,20 @@ def wiki_search(q: str = Query(..., min_length=1), limit: int = Query(10, ge=1, 
 
 
 @router.get("/graph")
-def wiki_graph():
+def wiki_graph(request: Request):
     """Return wikilink adjacency graph (D3/visualization-friendly).
 
     Wikilink resolution strategy: prefer exact path matches,
     fall back to stem-only matching across directories.
     """
-    pages = _scan_pages()
+    wiki_root = _user_wiki_dir(request)
+    pages = _scan_pages(request)
     nodes = []
     page_data = {}
     page_paths_by_stem: dict[str, list[str]] = {}  # stem -> [relative path]
 
     for p in pages:
-        rel = p.relative_to(Path(WIKI_DIR)).as_posix()
+        rel = p.relative_to(wiki_root).as_posix()
         text = p.read_text(errors="replace")
         fm = _parse_frontmatter(text)
         page_data[rel] = {
@@ -576,19 +589,19 @@ def wiki_graph():
 
 
 @router.get("/tags")
-def wiki_tags():
+def wiki_tags(request: Request):
     """Return all tags used across wiki pages with counts, sorted by count desc.
 
     LLM agent must call this before writing: reuse existing tags,
     only create new ones when no match exists.
     """
-    counts = _collect_all_tags()
+    counts = _collect_all_tags(request)
     tags = [{"name": name, "count": cnt} for name, cnt in counts.items()]
     return {"count": len(tags), "tags": tags}
 
 
 @router.get("/protocol")
-def wiki_protocol(file: str = Query("all", description="file name: purpose | schema | CLAUDE | all")):
+def wiki_protocol(request: Request, file: str = Query("all", description="file name: purpose | schema | CLAUDE | all")):
     """Return wiki protocol text (for remote LLM agent to read).
 
     Priority: local WIKI_DIR/<name>.md > nollmkb built-in default.
@@ -629,26 +642,25 @@ def wiki_protocol(file: str = Query("all", description="file name: purpose | sch
 
 
 @router.post("/init")
-def wiki_init(force: bool = Query(False, description="overwrite existing files")):
-    """Generate default files in WIKI_DIR: protocol (3) + skeleton (2).
+def wiki_init(request: Request, force: bool = Query(False, description="overwrite existing files")):
+    """Generate default files: protocol files → WIKI_DIR/shared/, skeleton → user dir.
 
-    Protocol files (purpose.md / schema.md / CLAUDE.md): define wiki workflow, user-customizable.
-    Skeleton files (index.md / log.md): empty initial state maintained by LLM agent.
+    Protocol files (purpose.md / schema.md / CLAUDE.md): shared across all users.
+    Skeleton files (index.md / log.md): per-user initial state maintained by LLM agent.
 
     Default behavior: skip existing files (protects user customizations).
     force=True: overwrite (use with caution).
-
-    Use cases:
-    - First deploy with empty wiki dir: one-click bootstrap
-    - After nollmkb upgrade with new defaults (force=True)
     """
     created = []
     skipped = []
     overwritten = []
 
-    # protocol files (customizable)
+    shared_dir = Path(WIKI_DIR) / "shared"
+    user_dir = _user_wiki_dir(request)
+
+    # protocol files → shared/ (multi-user)
     for name in _DEFAULT_PROTOCOL.keys():
-        local_path = Path(WIKI_DIR) / f"{name}.md"
+        local_path = shared_dir / f"{name}.md"
         content = _resolve_template(name)
 
         if not content:
@@ -665,9 +677,9 @@ def wiki_init(force: bool = Query(False, description="overwrite existing files")
         local_path.parent.mkdir(parents=True, exist_ok=True)
         local_path.write_text(content, encoding="utf-8")
 
-    # skeleton files (index.md / log.md)
+    # skeleton files → user dir
     for name, default_content in _DEFAULT_SKELETON.items():
-        local_path = Path(WIKI_DIR) / f"{name}.md"
+        local_path = user_dir / f"{name}.md"
         content = _resolve_template(name) or default_content
 
         if not content:
@@ -689,12 +701,12 @@ def wiki_init(force: bool = Query(False, description="overwrite existing files")
         "created": created,
         "skipped": skipped,
         "overwritten": overwritten,
-        "hint": "Protocol files are customizable; skeleton files are maintained by LLM agent. Use force=true to overwrite.",
+        "hint": "Protocol files are shared; skeleton files are per-user. Use force=true to overwrite.",
     }
 
 
 @router.post("/preview")
-def wiki_preview(payload: dict = Body(...)):
+def wiki_preview(payload: dict = Body(...), request: Request = None):
     """Diff preview before writing. Does not modify any files.
 
     Body: {"topic": "notes/topic-name", "content": "---\\n...\\n---\\nbody"}
@@ -704,14 +716,15 @@ def wiki_preview(payload: dict = Body(...)):
     if not topic or new_content is None:
         raise HTTPException(400, "requires topic and content fields")
 
-    path = _abs_topic_path(topic)
+    wiki_root = _user_wiki_dir(request)
+    path = _abs_topic_path(topic, request)
     exists = path.exists()
     old_content = path.read_text(errors="replace") if exists else ""
 
     diff = _diff_preview(old_content, new_content)
 
     return {
-        "topic": path.relative_to(Path(WIKI_DIR)).as_posix() if exists else _safe_topic(topic),
+        "topic": path.relative_to(wiki_root).as_posix() if exists else _safe_topic(topic),
         "exists": exists,
         "old_size": len(old_content),
         "new_size": len(new_content),
@@ -725,7 +738,7 @@ def wiki_preview(payload: dict = Body(...)):
 # ============== POST endpoints ==============
 
 @router.post("/page")
-def wiki_write(payload: dict = Body(...)):
+def wiki_write(payload: dict = Body(...), request: Request = None):
     """Create or update a wiki page.
 
     Body: {
@@ -750,7 +763,8 @@ def wiki_write(payload: dict = Body(...)):
     if not isinstance(source_chunks, list):
         raise HTTPException(400, "source_chunks must be a list")
 
-    path = _abs_topic_path(topic)
+    wiki_root = _user_wiki_dir(request)
+    path = _abs_topic_path(topic, request)
 
     if not confirm:
         # preview mode
@@ -759,7 +773,7 @@ def wiki_write(payload: dict = Body(...)):
         diff = _diff_preview(old_content, new_content)
         return {
             "preview": True,
-            "topic": path.relative_to(Path(WIKI_DIR)).as_posix(),
+            "topic": path.relative_to(wiki_root).as_posix(),
             "exists": exists,
             "old_size": len(old_content),
             "new_size": len(new_content),
@@ -801,7 +815,7 @@ def wiki_write(payload: dict = Body(...)):
                 st = path.stat()
                 with open(path, "rb") as f:
                     h = file_hash(f.read())
-                wiki_state[path.relative_to(Path(WIKI_DIR)).as_posix()] = {
+                wiki_state[path.relative_to(wiki_root).as_posix()] = {
                     "mtime": st.st_mtime,
                     "size": st.st_size,
                     "hash": h,
@@ -820,14 +834,14 @@ def wiki_write(payload: dict = Body(...)):
     return {
         "preview": False,
         "status": "ok",
-        "topic": path.relative_to(Path(WIKI_DIR)).as_posix(),
+        "topic": path.relative_to(wiki_root).as_posix(),
         "size": path.stat().st_size,
         "tags": norm_tags,
     }
 
 
 @router.post("/page/delete")
-def wiki_delete(payload: dict = Body(...)):
+def wiki_delete(payload: dict = Body(...), request: Request = None):
     """Delete a wiki page. Requires confirm=true."""
     topic = payload.get("topic", "")
     confirm = payload.get("confirm", False)
@@ -835,11 +849,12 @@ def wiki_delete(payload: dict = Body(...)):
     if not topic:
         raise HTTPException(400, "requires topic field")
 
-    path = _abs_topic_path(topic)
+    wiki_root = _user_wiki_dir(request)
+    path = _abs_topic_path(topic, request)
     if not path.exists():
         raise HTTPException(404, f"topic not found: {topic}")
 
-    rel = path.relative_to(Path(WIKI_DIR)).as_posix()
+    rel = path.relative_to(wiki_root).as_posix()
 
     if not confirm:
         return {

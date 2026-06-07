@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>nollmkb - 登录</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+<style>body { max-width: 400px; margin: 100px auto; }</style>
+</head>
+<body data-page="login">
+<main class="container">
+  <h2>nollmkb</h2>
+  <form id="login-form">
+    <label>用户名 <input type="text" id="user" required autofocus></label>
+    <label>密码 <input type="password" id="password" required></label>
+    <button type="submit">登录</button>
+  </form>
+  <p id="error" style="color:red;display:none"></p>
+</main>
+<script>
+const BASE = window.location.origin;
+document.getElementById("login-form").onsubmit = async (e) => {
+  e.preventDefault();
+  const u = document.getElementById("user").value;
+  const p = document.getElementById("password").value;
+  try {
+    const r = await fetch(BASE + "/auth/login", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({user: u, password: p})
+    });
+    if (!r.ok) {
+      document.getElementById("error").style.display = "block";
+      document.getElementById("error").textContent = r.status === 401 ? "用户名或密码错误" : "登录失败";
+      return;
+    }
+    const d = await r.json();
+    localStorage.setItem("nkb_token", d.token);
+    localStorage.setItem("nkb_user", d.user);
+    window.location.href = "/ui/search.html";
+  } catch(err) {
+    document.getElementById("error").style.display = "block";
+    document.getElementById("error").textContent = "无法连接服务器";
+  }
+};
+</script>
+</body>
+</html>

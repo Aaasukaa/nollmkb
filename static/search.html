@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>nollmkb - 搜索</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+<style>.chunk-text.collapsed { max-height: 4.5em; overflow: hidden; } .chunk-text.expanded { max-height: 300px; overflow-y: auto; white-space: pre-wrap; }</style>
+</head>
+<body data-page="search">
+<nav class="container-fluid">
+  <ul><li><strong>nollmkb</strong></li></ul>
+  <ul>
+    <li><a href="/ui/search.html" data-page="search">搜索</a></li>
+    <li><a href="/ui/wiki-list.html" data-page="wiki">Wiki</a></li>
+    <li><a href="/ui/documents.html" data-page="docs">文档</a></li>
+    <li id="nav-login"><a href="/ui/login.html">登录</a></li>
+  </ul>
+</nav>
+<main class="container">
+  <h2>搜索</h2>
+  <form id="search-form">
+    <input type="search" id="query" placeholder="输入问题..." required>
+    <details>
+      <summary>高级选项</summary>
+      <label>返回条数 <span id="top-k-val">5</span><input type="range" id="top_k" value="5" min="1" max="20" oninput="document.getElementById('top-k-val').textContent=this.value"></label>
+      <div class="grid">
+        <label>最低相关度 <input type="number" id="min-score" value="0.3" min="0" max="1" step="0.05"></label>
+        <label>限定目录 <select id="dir"><option value="">全部目录</option></select></label>
+        <label>文件类型 <select id="ext"><option value="">全部类型</option></select></label>
+      </div>
+      <fieldset>
+        <legend>搜索模式</legend>
+        <label><input type="radio" name="mode" value="hybrid" checked> 混合检索</label>
+        <label><input type="radio" name="mode" value="semantic"> 语义搜索</label>
+        <label><input type="radio" name="mode" value="keyword"> 关键词搜索</label>
+      </fieldset>
+      <label><input type="checkbox" id="rerank" checked> 重排序</label>
+      <label><input type="checkbox" id="context"> 显示前后文</label>
+    </details>
+    <button type="submit">搜索</button>
+  </form>
+  <div id="results"></div>
+</main>
+<div id="status-bar" style="position:fixed;bottom:0;width:100%;background:#f8f8f8;padding:4px 12px;font-size:12px;color:#666"></div>
+<script src="/ui/shared.js"></script>
+<script>
+// load directory and ext options from /documents
+(async function() {
+  try {
+    const r = await fetch(BASE + "/documents", { headers: authHeaders() });
+    if (!r.ok) return;
+    const d = await r.json();
+    const docs = d.documents || [];
+    const dirs = [...new Set(docs.map(doc => doc.dir).filter(Boolean))].sort();
+    const exts = [...new Set(docs.map(doc => doc.ext).filter(Boolean))].sort();
+    [ ["dir", dirs], ["ext", exts] ].forEach(([id, vals]) => {
+      const sel = document.getElementById(id);
+      vals.forEach(v => { const o = document.createElement("option"); o.value = v; o.textContent = v; sel.appendChild(o); });
+    });
+  } catch(e) {}
+})();
+
+function toggleText(i) {
+  const el = document.getElementById("text-" + i);
+  const btn = document.getElementById("toggle-" + i);
+  if (el.classList.contains("collapsed")) {
+    el.classList.remove("collapsed");
+    el.classList.add("expanded");
+    btn.textContent = "收起";
+  } else {
+    el.classList.remove("expanded");
+    el.classList.add("collapsed");
+    btn.textContent = "展开全文";
+  }
+}
+
+document.getElementById("search-form").onsubmit = async (e) => {
+  e.preventDefault();
+  const q = document.getElementById("query").value;
+  const out = document.getElementById("results");
+  out.innerHTML = "<p>搜索中...</p>";
+
+  try {
+    const body = {text: q, top_k: parseInt(document.getElementById("top_k").value)};
+    const ms = document.getElementById("min-score").value;
+    if (ms) body.min_score = parseFloat(ms);
+    const dr = document.getElementById("dir").value;
+    if (dr) body.dir = dr;
+    const ext = document.getElementById("ext").value;
+    if (ext) body.filters = {"ext": ext};
+    // search mode + rerank
+    const mode = document.querySelector('input[name="mode"]:checked').value;
+    if (mode === "hybrid") { body.bm25 = true; }
+    else if (mode === "keyword") { body.bm25 = true; }
+    else { body.bm25 = false; }
+    body.rerank = document.getElementById("rerank").checked;
+    if (document.getElementById("context").checked) body.context = true;
+    const r = await fetch(BASE + "/query", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify(body)
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      out.innerHTML = r.status === 401
+        ? `<p style="color:red">${mapError(err)} <a href="/ui/login.html">重新登录</a></p>`
+        : `<p style="color:red">${mapError(err)}</p>`;
+      return;
+    }
+    const d = await r.json();
+    if (!d.results || d.results.length === 0) {
+      out.innerHTML = "<p>未找到结果</p>";
+      return;
+    }
+    out.innerHTML = d.results.map((h, i) => `
+      <article>
+        <small style="color:${h.score > 0.7 ? 'green' : h.score > 0.4 ? 'orange' : 'red'}">
+          ${h.score.toFixed(4)}
+        </small>
+        <div id="text-${i}" class="chunk-text collapsed">${h.text}</div>
+        ${h.text.length > 300 ? `<a href="#" onclick="toggleText(${i});return false" id="toggle-${i}">展开全文</a>` : ""}
+        <small>${h.source}</small>
+      </article>
+    `).join("");
+  } catch(err) {
+    out.innerHTML = `<p style="color:red">无法连接服务器</p>`;
+  }
+};
+</script>
+</body>
+</html>

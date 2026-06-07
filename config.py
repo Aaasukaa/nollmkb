@@ -72,6 +72,9 @@ COLLECTION_NAME = _resolve_path("NOLLMKB_COLLECTION", "nollmkb")
 # --- security ---
 API_KEY_HASH = _resolve_path("NOLLMKB_API_KEY_HASH", "")  # sha256 hash, empty = no auth
 
+# --- user management ---
+USERS_FILE = _resolve_path("NOLLMKB_USERS_FILE", f"{Path(__file__).resolve().parent}/auth/users.toml")
+
 # --- model / chunking config (constants, no paths) ---
 HASH_VERSION = 3
 CHUNK_SIZE = 1500
@@ -85,3 +88,5 @@ TOP_K = 5
 DEVICE = _resolve_path("NOLLMKB_DEVICE", "cuda")  # "cuda" or "cpu"
 HOST = _resolve_path("NOLLMKB_HOST", "127.0.0.1")
 PORT = 8765
+
+SCAN_STATUS = {"running": False, "current": 0, "total": 0, "current_file": "", "last_result": ""}

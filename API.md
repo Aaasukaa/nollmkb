@@ -140,6 +140,22 @@ POST http://<server>:8765/scan
 
 扫描服务器 inputs/ 目录下所有文件，自动去重增量入库。
 
+### 4.1 扫描状态
+
+```
+GET http://<server>:8765/scan/status
+```
+
+返回当前扫描进度：`{"running": bool, "current": int, "total": int, "current_file": "...", "last_result": "..."}`。
+
+### 4.2 待处理文件数
+
+```
+GET http://<server>:8765/scan/pending
+```
+
+快速统计 inputs/ 目录下待处理文件数（不解析、不 embedding）。返回 `{"pending": <数量>}`。
+
 ### 5. 文档列表
 
 ```
@@ -159,6 +175,23 @@ DELETE http://<server>:8765/documents?source=论文/某论文.pdf
 ```
 
 删除指定文件的所有 chunk。省略 `source` 则清空全部。
+
+### 6.5 认证（会话登录）
+
+nollmkb 支持两套认证体系共存：
+- **API_KEY_HASH**：agent/curl 用，全局 sha256 哈希比对
+- **Session Token**：WebUI 用户用，登录后获取 24h 有效期 token
+
+```
+POST http://<server>:8765/auth/login
+Content-Type: application/json
+
+Body: {"user": "用户名", "password": "原始密码"}
+```
+
+返回：`{"token": "...", "user": "用户名", "expires_in": 86400}`
+
+所有请求带 `Authorization: Bearer <token>` 即可。登录页免认证。
 
 ### 7. Wiki 系统（6 GET + 4 POST）
 
@@ -271,7 +304,7 @@ Body: {
 }
 ```
 
-**`confirm: false` 时**返回 diff 预览（同 7.7）。
+**`confirm: false` 时**返回 diff 预览（同 7.8）。
 **`confirm: true` 时**真正写入，**自动规范化**：
 - 文件 fcntl 文件锁防并发损坏
 - 路径安全检查（拒绝 `..` / `/` 开头）
@@ -297,8 +330,8 @@ Body: {"topic": "notes/xxx", "confirm": true}
 ## 调用示例
 
 ```bash
-# 如设置了 NOLLMKB_API_KEY, 所有请求追加:
-#   -H "Authorization: Bearer your-secret-key"
+# 如设置了认证, 所有请求追加:
+#   -H "Authorization: Bearer <password或token>"
 
 # 查询
 curl -X POST http://<server>:8765/query \
@@ -320,6 +353,15 @@ curl -F "files=@/path/to/doc.pdf" http://<server>:8765/upload
 
 # 扫描
 curl -X POST http://<server>:8765/scan
+
+# 扫描进度
+curl http://<server>:8765/scan/status
+curl http://<server>:8765/scan/pending
+
+# 登录 (用户密码)
+curl -X POST http://<server>:8765/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"user":"alice","password":"xxx"}'
 
 # 查文档列表
 curl http://<server>:8765/documents

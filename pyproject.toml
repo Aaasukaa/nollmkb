@@ -1,6 +1,6 @@
 [project]
 name = "nollmkb"
-version = "0.1.0"
+version = "1.0.0"
 description = "Lightweight RAG knowledge base + LLM-maintained wiki. ChromaDB + BGE-M3 + FastAPI."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -25,5 +25,5 @@ dependencies = [
 ]
 
 [project.urls]
-Repository = "https://github.com/your-org/nollmkb"
-Issues = "https://github.com/your-org/nollmkb/issues"
+Repository = "https://github.com/Aaasukaa/nollmkb"
+Issues = "https://github.com/Aaasukaa/nollmkb/issues"

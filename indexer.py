@@ -111,6 +111,10 @@ def do_scan():
 
     for idx, fpath in enumerate(all_files, 1):
         key = os.path.relpath(fpath, DOCS_DIR)
+        from config import SCAN_STATUS
+        SCAN_STATUS["current"] = idx
+        SCAN_STATUS["total"] = len(all_files)
+        SCAN_STATUS["current_file"] = key
         ext = os.path.splitext(key)[1].lower()
         pct = f"{idx}/{len(all_files)}"
         st = os.stat(fpath)
