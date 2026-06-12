@@ -99,7 +99,7 @@ uv sync # 非必须，不想用uv可选用conda等一切你喜欢的方式管理
 
 # 2. 配置 (可选, 选一种即可)
 # 运行交互式配置向导(推荐):
-uv run python3 scripts/setup.p
+uv run python3 scripts/setup.py
 # 或者手动编辑.env配置:
 # Linux/Macos
 cp .env.example .env
