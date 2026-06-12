@@ -89,47 +89,31 @@ NOLLMKB_HOST=100.x.x.x
 13,398 chunks / 查询秒回。
 
 ## 快速开始
+使用uv管理python虚拟环境(可选) -> [uv官方安装教程](https://docs.astral.sh/uv/getting-started/installation/)
 
 ```bash
 # 1. 部署
-git clone <repo-url> nollmkb
+git clone https://github.com/Aaasukaa/nollmkb.git
 cd nollmkb
-uv sync
+uv sync # 非必须，不想用uv可选用conda等一切你喜欢的方式管理python环境
 
 # 2. 配置 (可选, 选一种即可)
-cp .env.example .env   # 手动编辑
-# 或运行交互式配置向导:
-uv run python3 scripts/setup.py
+# 运行交互式配置向导(推荐):
+uv run python3 scripts/setup.p
+# 或者手动编辑.env配置:
+# Linux/Macos
+cp .env.example .env
+# Windows PowerShell
+Copy-Item .env.example .env
+# Windows 命令提示符 (cmd)
+copy .env.example .env
 
-# 3. 拉模型 (首次自动从 HuggingFace 下载, ~1.2 GB)
-# 不用手动跑, 启动时自动加载 BAAI/bge-m3
-
-# 4. 放文档 (在 nollmkb/ 同级目录)
+# 3. 放文档 (在 nollmkb/ 同级目录)
 mkdir ../inputs && cp /your/docs/* ../inputs/
 
-# 5. 启动 (首次自动扫描入库)
-uv run python3 server.py
+# 4. 启动 (首次自动扫描入库)
+uv run python3 server.py # (首次启动服务会自动从 HuggingFace 下载模型, 这一步国内网络环境可能有点慢，有条件配合魔法或者设置镜像源)
 ```
-
-<details>
-<summary>Windows 用户</summary>
-
-```powershell
-# 1. 部署
-git clone <repo-url> nollmkb
-cd nollmkb
-uv sync
-
-# 2. 配置 (可选)
-Copy-Item .env.example .env
-# 或: uv run python3 scripts/setup.py
-
-# 3. 启动
-uv run python3 server.py
-```
-
-> Windows 的 `fcntl` 文件锁不支持，wiki 写操作会跳过加锁（单用户场景无影响）。
-</details>
 
 ### 目录布局
 
@@ -181,27 +165,22 @@ uv run python3 server.py
 # 服务跑在 127.0.0.1:8765，只有本机能访问
 ```
 
-**场景二：希望其他电脑也能远程访问（推荐 Tailscale）**
+**场景二：希望其他电脑用户也能远程访问（推荐 Tailscale 建立虚拟局域网）**
 
 ```bash
 tailscale ip -4        # 拿到 IP（类似 100.x.x.x）
 ```
 在 `.env` 里写 `NOLLMKB_HOST=100.x.x.x`（填你实际的 Tailscale IP）。其他电脑访问 `http://100.x.x.x:8765`。
 
-> **为什么不用 `0.0.0.0`**：它会同时在局域网网卡上监听，同网段任何人都能访问。绑定 Tailscale IP 只开放虚拟网卡，更安全。
+**为什么不用 `0.0.0.0`**：它会同时在局域网网卡上监听，同网段任何人都能访问。绑定 Tailscale IP 只开放虚拟网卡，更安全。
 
-**场景三：还想加个访问保护**
-
+设置用户访问密钥：
 ```bash
 # 生成一个 bearer token
 uv run python3 scripts/gen_token.py alice
 # 把输出的 Hash 行写入 auth/users.toml，Token 发给用户
 ```
 用户请求时加 `-H "Authorization: Bearer nkb_alice_..."`。`users.toml` 只存 hash，不存 token。
-
-**场景四：没显卡**
-
-`.env` 写 `NOLLMKB_DEVICE=cpu`。会慢但能跑。
 
 ## 使用
 
