@@ -99,7 +99,7 @@ uv sync # 非必须，不想用uv可选用conda等一切你喜欢的方式管理
 
 # 2. 配置 (可选, 选一种即可)
 # 运行交互式配置向导(推荐):
-uv run python3 scripts/setup.py
+uv run python3 scripts/setup.p
 # 或者手动编辑.env配置:
 # Linux/Macos
 cp .env.example .env
@@ -215,6 +215,8 @@ nollmkb 的核心交互方式是通过 LLM agent（OpenCode、Claude Code、Code
 ### 使用 WebUI
 
 nollmkb 自带一个轻量的浏览器界面（零构建，打开即用），适合非技术用户或偶尔想直接查看的场景。
+
+![webui](./assets/webui.png)
 
 **启动后访问**：`http://<服务器IP>:8765/ui/login.html`
 
