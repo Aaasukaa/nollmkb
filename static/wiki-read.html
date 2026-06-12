@@ -26,7 +26,7 @@ async function load() {
   const topic = new URLSearchParams(window.location.search).get("topic");
   if (!topic) { document.getElementById("content").innerHTML = "<p>缺少参数 topic</p>"; return; }
   try {
-    const r = await fetch(BASE + "/wiki/page?topic=" + encodeURIComponent(topic), { headers: authHeaders() });
+    const r = await authFetch(BASE + "/wiki/page?topic=" + encodeURIComponent(topic));
     const d = await r.json();
     let html = `<h2>${d.frontmatter?.title || topic}</h2>`;
     if (d.frontmatter?.tags) html += `<p>标签: ${d.frontmatter.tags.join(", ")}</p>`;

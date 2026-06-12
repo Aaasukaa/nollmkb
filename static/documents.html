@@ -70,7 +70,7 @@ dropZone.addEventListener("drop", async e => {
   for (const file of e.dataTransfer.files) {
     if (file.size > 100 * 1024 * 1024) { document.getElementById("upload-msg").textContent = `${file.name} 超过 100MB 限制`; continue; }
     const form = new FormData(); form.append("files", file);
-    const r = await fetch(BASE + "/upload", { method: "POST", headers: {Authorization: "Bearer " + getToken()}, body: form });
+    const r = await authFetch(BASE + "/upload", { method: "POST", body: form });
     const d = await r.json();
     document.getElementById("upload-msg").textContent = d.status === "ok" ? `${file.name} 上传成功` : `${file.name} 上传失败`;
     loadDocs();
@@ -79,7 +79,7 @@ dropZone.addEventListener("drop", async e => {
 document.getElementById("file-input").addEventListener("change", async () => {
   for (const file of document.getElementById("file-input").files) {
     const form = new FormData(); form.append("files", file);
-    const r = await fetch(BASE + "/upload", { method: "POST", headers: {Authorization: "Bearer " + getToken()}, body: form });
+    const r = await authFetch(BASE + "/upload", { method: "POST", body: form });
     document.getElementById("upload-msg").textContent = (await r.json()).status === "ok" ? `${file.name} 上传成功` : `${file.name} 上传失败`;
   }
   loadDocs();
@@ -88,7 +88,7 @@ document.getElementById("file-input").addEventListener("change", async () => {
 // Document list
 async function loadDocs() {
   try {
-    const r = await fetch(BASE + "/documents", { headers: authHeaders() });
+    const r = await authFetch(BASE + "/documents");
     const d = await r.json();
     const list = document.getElementById("doc-list");
     list.innerHTML = (d.documents || []).map(doc => `<tr>
@@ -100,7 +100,7 @@ async function loadDocs() {
 
 async function deleteDoc(source) {
   if (!confirm("确定删除 " + source + "？")) return;
-  const r = await fetch(BASE + "/documents?source=" + encodeURIComponent(source), { method: "DELETE", headers: authHeaders() });
+  const r = await authFetch(BASE + "/documents?source=" + encodeURIComponent(source), { method: "DELETE" });
   if (r.ok) loadDocs();
 }
 
@@ -110,9 +110,9 @@ async function startScan() {
   document.getElementById("scan-btn").disabled = true;
   document.getElementById("scan-bar").style.display = "block";
   document.getElementById("scan-status-text").textContent = "扫描中...";
-  fetch(BASE + "/scan", { method: "POST", headers: authHeaders() });
+  authFetch(BASE + "/scan", { method: "POST" });
   _scanPoll = setInterval(async () => {
-    const r = await fetch(BASE + "/scan/status");
+    const r = await authFetch(BASE + "/scan/status");
     const s = await r.json();
     document.getElementById("scan-bar").value = s.total > 0 ? (s.current / s.total) * 100 : 0;
     document.getElementById("scan-status-text").textContent = s.running ? `[${s.current}/${s.total}] ${s.current_file}` : (s.last_result || "完成");
@@ -123,11 +123,11 @@ async function startScan() {
 // Build guide
 async function checkBuild() {
   try {
-    const r = await fetch(BASE + "/health");
+    const r = await authFetch(BASE + "/health");
     const h = await r.json();
     if (h.chunks === 0) {
       document.getElementById("build-guide").style.display = "block";
-      const pr = await fetch(BASE + "/scan/pending");
+      const pr = await authFetch(BASE + "/scan/pending");
       const pd = await pr.json();
       document.getElementById("pending-info").innerHTML = pd.pending > 0 ? `<p>发现 <strong>${pd.pending}</strong> 个文件待索引</p>` : "<p>尚未检测到文档</p>";
       document.getElementById("start-build").onclick = startScan;

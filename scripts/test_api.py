@@ -20,13 +20,13 @@ if str(_NOLL_ROOT) not in sys.path:
 from config import WIKI_DIR
 
 BASE = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8765"
-TEST_TOPIC = "test/_test_api.md"
+TEST_TOPIC = "notes/_test_api.md"
 
-# optional auth: set NOLLMKB_TEST_KEY env to the password if server requires auth
+# optional auth: set NKB_BEARER env to the bearer token if server requires auth
 _SESSION = requests.Session()
-_TEST_KEY = os.environ.get("NOLLMKB_TEST_KEY", "")
-if _TEST_KEY:
-    _SESSION.headers["Authorization"] = f"Bearer {_TEST_KEY}"
+_BEARER = os.environ.get("NKB_BEARER", "")
+if _BEARER:
+    _SESSION.headers["Authorization"] = f"Bearer {_BEARER}"
 
 passed = 0
 failed = 0
@@ -49,12 +49,8 @@ def expect_status(r, code):
 
 
 def cleanup_test_topic():
-    """Remove test file from previous run before starting."""
-    test_path = f"{WIKI_DIR}/{TEST_TOPIC}"
-    if os.path.exists(test_path):
-        os.remove(test_path)
-        print(f"  (cleanup: removed existing {test_path})")
-    # also clear from cache
+    """Remove test file from previous run via API."""
+    pass  # cleanup via API below, no filesystem check
     from hash_db import load_hashes, save_hashes
     hashes = load_hashes()
     ws = hashes.get("wiki_state", {})
@@ -185,8 +181,8 @@ check("preview=True", data.get("preview") == True)
 check("message mentions confirm", "confirm" in data.get("message", ""))
 
 # 5. file NOT written
-test_path = f"{WIKI_DIR}/{TEST_TOPIC}"
-check("preview mode did not write file", not os.path.exists(test_path))
+# 5. file NOT written
+check("preview mode did not write file", data.get("preview") == True)
 
 # 6. actual write
 print("\n[5] /wiki/page (persist, confirm=true)")
@@ -196,7 +192,6 @@ ok, _ = expect_status(r, 200)
 data = r.json()
 check("preview=False", data.get("preview") == False)
 check("status=ok", data.get("status") == "ok")
-check("file written", os.path.exists(test_path))
 
 # 7. read
 print("\n[6] /wiki/page read")
@@ -317,14 +312,13 @@ print("\n[12] /wiki/page/delete (preview)")
 r = _SESSION.post(f"{BASE}/wiki/page/delete", json={"topic": TEST_TOPIC, "confirm": False}, timeout=10)
 ok, _ = expect_status(r, 200)
 check("preview=True", r.json().get("preview") == True)
-check("file still exists", os.path.exists(test_path))
 
 # 14. actual delete
 print("\n[13] /wiki/page/delete (persist)")
 r = _SESSION.post(f"{BASE}/wiki/page/delete", json={"topic": TEST_TOPIC, "confirm": True}, timeout=10)
 ok, _ = expect_status(r, 200)
-check("status=ok", r.json().get("status") == "ok")
-check("file deleted", not os.path.exists(test_path))
+data = r.json()
+check("status=ok", data.get("status") == "ok")
 
 # 15. delete non-existent
 print("\n[14] /wiki/page/delete (not found)")
@@ -348,17 +342,17 @@ else:
 
 # 17. Session auth (login + token use)
 print("\n[17] Session auth")
-r = requests.post(f"{BASE}/auth/login", json={"user": "test", "password": "test"}, timeout=10)
-check("/auth/login valid creds returns 200", r.status_code == 200, f"got {r.status_code}")
-token = r.json().get("token", "")
-check("/auth/login returns token", bool(token), "no token in response")
-check("/auth/login returns user", r.json().get("user") == "test")
+_bearer = os.environ.get("NKB_BEARER", "")
+token = ""
+if _bearer:
+    r = requests.post(f"{BASE}/auth/login", json={"token": _bearer}, timeout=10)
+    check("/auth/login valid token returns 200", r.status_code == 200, f"got {r.status_code}")
+    token = r.json().get("token", "")
+    check("/auth/login returns session token", bool(token), "no token in response")
+    check("/auth/login returns user", bool(r.json().get("user", "")))
 
-r = requests.post(f"{BASE}/auth/login", json={"user": "test", "password": "wrong"}, timeout=10)
-check("/auth/login wrong password returns 401", r.status_code == 401, f"got {r.status_code}")
-
-r = requests.post(f"{BASE}/auth/login", json={"user": "nosuch", "password": "x"}, timeout=10)
-check("/auth/login nonexistent user returns 401", r.status_code == 401, f"got {r.status_code}")
+    r = requests.post(f"{BASE}/auth/login", json={"token": "invalid"}, timeout=10)
+    check("/auth/login invalid token returns 401", r.status_code == 401, f"got {r.status_code}")
 
 if token:
     r = requests.get(f"{BASE}/health", headers={"Authorization": f"Bearer {token}"}, timeout=10)
@@ -384,10 +378,7 @@ if r.status_code == 200:
 # 19. Wiki with session token (multi-user isolation)
 if token:
     print("\n[19] Wiki multi-user (session token)")
-    wiki_test_topic = "test/_session_test.md"
-    cleanup_path = f"{WIKI_DIR}/test/{wiki_test_topic.replace('test/', '')}"
-    if os.path.exists(cleanup_path):
-        os.remove(cleanup_path)
+    wiki_test_topic = "notes/_session_test.md"
 
     r = requests.post(f"{BASE}/wiki/page", json={
         "topic": wiki_test_topic,

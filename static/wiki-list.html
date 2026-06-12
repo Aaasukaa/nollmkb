@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>nollmkb - Wiki</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
-<script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
 <style>#graph { border: 1px solid #ddd; margin-top: 20px; } .node circle { fill: #69b3a2; stroke: #333; stroke-width: 1.5px; } .link { stroke: #999; stroke-opacity: 0.6; }</style>
 </head>
 <body data-page="wiki">
@@ -29,7 +29,7 @@
 <script>
 async function loadWiki() {
   try {
-    const r = await fetch(BASE + "/wiki/list", { headers: authHeaders() });
+    const r = await authFetch(BASE + "/wiki/list");
     const d = await r.json();
     const el = document.getElementById("wiki-pages");
     if (!d.topics || d.topics.length === 0) {
@@ -42,20 +42,26 @@ async function loadWiki() {
         <td><a href="/ui/wiki-read.html?topic=${encodeURIComponent(t.topic)}">查看</a></td>
       </tr>`).join("")}</tbody></table>`;
 
-    // Graph
-    const gr = await fetch(BASE + "/wiki/graph", { headers: authHeaders() });
+    // Graph (best-effort: D3 may not load in some networks)
+    const gr = await authFetch(BASE + "/wiki/graph");
     const gd = await gr.json();
-    if (gd.nodes && gd.nodes.length > 0) drawGraph(gd);
+    if (gd.nodes && gd.nodes.length > 0) { try { drawGraph(gd); } catch(e) {} }
   } catch(e) { document.getElementById("wiki-pages").innerHTML = "<p style='color:red'>加载失败</p>"; }
 }
 
 function drawGraph(data) {
+  const nodeIds = new Set(data.nodes.map(n => n.id));
+  const validEdges = data.edges.filter(e => nodeIds.has(e.source) && nodeIds.has(e.target));
   const svg = d3.select("#graph"), width = svg.node().clientWidth, height = 400;
   const simulation = d3.forceSimulation(data.nodes)
-    .force("link", d3.forceLink(data.edges).id(d => d.id).distance(100))
     .force("charge", d3.forceManyBody().strength(-300))
     .force("center", d3.forceCenter(width / 2, height / 2));
-  const link = svg.append("g").selectAll("line").data(data.edges).join("line").attr("class", "link");
+  if (validEdges.length) {
+    simulation.force("link", d3.forceLink(validEdges).id(d => d.id).distance(100));
+  }
+  const link = validEdges.length
+    ? svg.append("g").selectAll("line").data(validEdges).join("line").attr("class", "link")
+    : svg.append("g").selectAll("line").data([]).join("line");
   const node = svg.append("g").selectAll("g").data(data.nodes).join("g").call(d3.drag()
     .on("start", (e,d) => { if(!e.active) simulation.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
     .on("drag", (e,d) => { d.fx = e.x; d.fy = e.y; })

@@ -34,7 +34,7 @@ async function load() {
   document.getElementById("back-link").href = "/ui/wiki-read.html?topic=" + encodeURIComponent(_topic);
   if (!_topic) return;
   try {
-    const r = await fetch(BASE + "/wiki/page?topic=" + encodeURIComponent(_topic), { headers: authHeaders() });
+    const r = await authFetch(BASE + "/wiki/page?topic=" + encodeURIComponent(_topic));
     const d = await r.json();
     const content = d.content;
     const fmEnd = content.indexOf("\n---\n");
@@ -52,9 +52,8 @@ async function save() {
   const body = document.getElementById("body-editor").value;
   const fullContent = _fm + "\n" + body;
   try {
-    const r = await fetch(BASE + "/wiki/page", {
+    const r = await authFetch(BASE + "/wiki/page", {
       method: "POST",
-      headers: authHeaders(),
       body: JSON.stringify({topic: _topic, content: fullContent, confirm: true})
     });
     const d = await r.json();

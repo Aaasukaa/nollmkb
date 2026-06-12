@@ -6,38 +6,36 @@
 IP:   <your-server>
 端口: 8765
 协议: HTTP
-认证: 可选 Bearer token (sha256 hash, NOLLMKB_API_KEY_HASH)
+认证: 可选 Bearer token (auth/users.toml)
 ```
 
 > **安全提示**：远程访问时把 `NOLLMKB_HOST` 设为 Tailscale IP（如 `100.x.x.x`），不要用 `0.0.0.0`。`0.0.0.0` 会同时在局域网上开放，同网段内任何人都能访问。
 
 ### 认证
 
-nollmkb 默认任何人都能访问（仅限本机 `127.0.0.1`）。如果想远程访问并加一道密码：
+nollmkb 使用统一的 bearer token 认证。管理员通过 `scripts/gen_token.py` 生成 token 分发给用户，用户不需要自己记密码。
 
-**第一步**：生成密码的 hash。终端运行（把 `123` 换成你的密码）：
-
-```bash
-python3 -c "import hashlib; print(hashlib.sha256(b'123').hexdigest())"
-# 输出类似: 91a73fd806ab...
-```
-
-**第二步**：打开 `.env` 文件，写入：
-
-```
-NOLLMKB_API_KEY_HASH=91a73fd806ab...
-```
-
-**第三步**：重启服务。之后所有请求必须加一行：
+**管理员生成 token**：
 
 ```bash
-curl -H "Authorization: Bearer 123" http://<server>:8765/health
+# 终端运行
+uv run python3 scripts/gen_token.py alice
+# 输出:
+#   Token: nkb_alice_X8q2mK9p4L5v...
+#   Hash:  c71386f14555a2f687...
 ```
+把 `Hash:` 行写入 `auth/users.toml`，把 `Token:` 行（如 `nkb_alice_X8q2mK9p...`）发给 alice。
 
-> `.env` 里只存 hash，不存原始密码。偷看 `.env` 的人拿到 hash 也无法登录——请求时用的仍然是原始密码 `123`，服务端 hash 后与 `.env` 比对。
+**用户使用**：
 
 ```bash
-curl -H "Authorization: Bearer your-secret-key" http://<server>:8765/health
+curl -H "Authorization: Bearer nkb_alice_X8q2mK9p4L5v..." http://<server>:8765/health
+```
+
+> `.env` 里不存任何 token 或 hash。`auth/users.toml` 只存 hash，不存 token 原文。偷看 `users.toml` 的人拿不到可用的 token。token 泄露时可在 `users.toml` 中删除对应行来吊销。更改后需重启服务。
+
+```bash
+curl -H "Authorization: Bearer nkb_alice_xxx" http://<server>:8765/health
 ```
 
 不设 key 时无需此头，行为不变。
@@ -178,15 +176,16 @@ DELETE http://<server>:8765/documents?source=论文/某论文.pdf
 
 ### 6.5 认证（会话登录）
 
-nollmkb 支持两套认证体系共存：
-- **API_KEY_HASH**：agent/curl 用，全局 sha256 哈希比对
-- **Session Token**：WebUI 用户用，登录后获取 24h 有效期 token
+bearer token 认证方式：
+
+- **Agent/curl**：直接 `Authorization: Bearer <token>`，服务端从 `auth/users.toml` 查 hash → 用户名
+- **WebUI 登录**：向 `/auth/login` 发送 token 换取 24h session token（避免频繁传输原始 token）
 
 ```
 POST http://<server>:8765/auth/login
 Content-Type: application/json
 
-Body: {"user": "用户名", "password": "原始密码"}
+Body: {"token": "nkb_alice_X8q2mK9p..."}
 ```
 
 返回：`{"token": "...", "user": "用户名", "expires_in": 86400}`
@@ -218,17 +217,18 @@ GET /wiki/protocol?file=purpose
 - `schema.md` — frontmatter 规范 + 写作铁律 + 大小约束
 - `CLAUDE.md` — LLM agent 工作流 + 工具调用
 - `?file=...` 指定单个；不传 = 3 个全返回
+- 本地文件在 `wiki/shared/` 目录（多用户共享），缺失时 fallback 到 repo wiki_templates 内置默认
 
 返回:
 ```json
 {
   "wiki_dir": "/.../mykdb/wiki",
   "files": {
-    "purpose": {"path": "purpose.md", "content": "..."},
-    "schema":  {"path": "schema.md",  "content": "..."},
-    "CLAUDE":  {"path": "CLAUDE.md",  "content": "..."}
+    "purpose": {"source": "local or builtin", "path": "shared/purpose.md", "content": "..."},
+    "schema":  {"source": "local or builtin", "path": "shared/schema.md",  "content": "..."},
+    "CLAUDE":  {"source": "local or builtin", "path": "shared/CLAUDE.md",  "content": "..."}
   },
-  "usage_hint": "读 CLAUDE.md 知道工作流, 读 schema.md 知道写法, 读 purpose.md 知道关注范围"
+  "usage_hint": "Read CLAUDE.md for workflow, schema.md for writing rules, purpose.md for scope"
 }
 ```
 
@@ -239,23 +239,25 @@ POST /wiki/init
 POST /wiki/init?force=true
 ```
 
-生成 wiki 默认协议文件和骨架文件到 `wiki/` 目录：
-- `purpose.md` — wiki 目的与关注范围
-- `schema.md` — 页面规范与写作铁律
-- `CLAUDE.md` — LLM agent 工作流入口
-- `index.md` — 内容目录（空）
-- `log.md` — append-only 操作日志（空）
+生成 wiki 默认文件（幂等：已有文件自动跳过，`?force=true` 覆盖）：
 
-**幂等**: 已有文件自动跳过。`?force=true` 覆盖已有文件。
+- **协议文件** → `wiki/shared/`（所有用户共享，人人可定制）：
+  - `purpose.md` — wiki 目的与关注范围
+  - `schema.md` — 页面规范与写作铁律
+  - `CLAUDE.md` — LLM agent 工作流入口
+
+- **骨架文件** → `wiki/{user}/`（当前认证用户的私有目录）：
+  - `index.md` — 内容目录（空，agent 自觉维护）
+  - `log.md` — append-only 操作日志（空，agent 自觉维护）
 
 返回:
 ```json
 {
   "wiki_dir": "/.../mykdb/wiki",
-  "created": ["index.md", "log.md"],
-  "skipped": ["purpose.md", "schema.md", "CLAUDE.md"],
+  "created": ["shared/purpose.md", "shared/schema.md", "shared/CLAUDE.md", "user007/index.md", "user007/log.md"],
+  "skipped": [],
   "overwritten": [],
-  "hint": "Protocol files are customizable; skeleton files are maintained by LLM agent. Use force=true to overwrite."
+  "hint": "Protocol files are shared; skeleton files are per-user. Use force=true to overwrite."
 }
 ```
 
@@ -331,7 +333,7 @@ Body: {"topic": "notes/xxx", "confirm": true}
 
 ```bash
 # 如设置了认证, 所有请求追加:
-#   -H "Authorization: Bearer <password或token>"
+#   -H "Authorization: Bearer <bearer_token>"
 
 # 查询
 curl -X POST http://<server>:8765/query \
@@ -358,10 +360,10 @@ curl -X POST http://<server>:8765/scan
 curl http://<server>:8765/scan/status
 curl http://<server>:8765/scan/pending
 
-# 登录 (用户密码)
+# 登录 (用 bearer token 换 session token)
 curl -X POST http://<server>:8765/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"user":"alice","password":"xxx"}'
+  -d '{"token":"nkb_alice_X8q2mK9p4L5v..."}'
 
 # 查文档列表
 curl http://<server>:8765/documents
@@ -419,11 +421,12 @@ curl -X POST http://<server>:8765/wiki/page/delete \
 
 ## Wiki 子系统
 
-`wiki/` 目录是 LLM 综合的累积笔记层，与 ChromaDB 完全解耦：
-- 物理位置: `mykdb/wiki/notes/*.md`（一个统一目录，不按来源分类）
+`wiki/` 目录是 LLM 综合的累积笔记层，与 ChromaDB 完全解耦：多用户架构，协议文件共享（shared/），笔记按用户隔离（{user}/notes/）：
+- 物理位置: `mykdb/wiki/{user}/notes/*.md`（env `NOLLMKB_WIKI_DIR` 可配根目录）
 - 元数据: frontmatter (YAML)，含 title / created / last_verified / sources (nollmkb chunk 引用) / related (wikilinks) / confidence / type / tags
-- 协议文件: `wiki/purpose.md` (为什么) / `wiki/schema.md` (怎么写) / `wiki/CLAUDE.md` (LLM agent 入口)
-- 操作日志: `wiki/log.md` (append-only)
+- 协议文件: `wiki/shared/purpose.md` (为什么) / `wiki/shared/schema.md` (怎么写) / `wiki/shared/CLAUDE.md` (LLM agent 入口)
+- 骨架文件: `wiki/{user}/index.md` (内容目录) / `wiki/{user}/log.md` (操作日志)
+- 协议远程访问: 通过 `GET /wiki/protocol` 端点读取（本地文件优先，缺失时 fallback 内置默认）
 - tag 系统: 自由英文短语，写入时自动规范化 (lowercase + 连字符 + singular + 去重 + strip 中文)
 - 缓存: 复用 `hash_db.py` 的三级增量判断 (mtime+size → hash → 重写)，加 `wiki_state` 顶层 key
 - 路径: `_safe_topic()` 防越权 (`..` 和 `/` 开头拒绝)

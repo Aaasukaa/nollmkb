@@ -1,5 +1,5 @@
-# auth/users.toml.example — copy to users.toml and edit
-# Generate hash: python3 -c "import hashlib; print(hashlib.sha256(b'password').hexdigest())"
+# auth/users.toml — 用户 bearer token (sha256 hash)
+# 管理员生成 token 给用户，用户不需要自己设密码。
+# 生成 token:  python3 scripts/gen_token.py 用户名
 [users]
-# alice = "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8"  # sha256("password")
-# bob   = "6ca13d52ca70c883e0f0bb101e425a89e8624de51db2d2392593af6a84118090"  # sha256("another")
+# test = "..."

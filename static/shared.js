@@ -16,6 +16,25 @@ function authHeaders() {
 }
 
 // Error mapping
+
+// Auth-aware fetch: redirect to login on 401. For FormData uploads (body is FormData),
+// skip Content-Type header so browser sets multipart boundary automatically.
+async function authFetch(url, options = {}) {
+  const t = localStorage.getItem("nkb_token");
+  if (!t) { window.location.href = "/ui/login.html"; throw new Error("redirect"); }
+  const headers = { "Authorization": "Bearer " + t };
+  const isFormData = options.body instanceof FormData;
+  if (!isFormData) headers["Content-Type"] = "application/json";
+  const r = await fetch(url, { ...options, headers: { ...headers, ...(options.headers || {}) } });
+  if (r.status === 401) {
+    localStorage.removeItem("nkb_token");
+    localStorage.removeItem("nkb_user");
+    window.location.href = "/ui/login.html";
+    throw new Error("redirect");
+  }
+  return r;
+}
+
 const ERROR_MAP = {
   "unauthorized": "登录已过期，请重新登录",
   "topic cannot be empty": "标题不能留空",
@@ -34,9 +53,8 @@ let _statusTimer = null;
 async function updateStatus() {
   const token = localStorage.getItem("nkb_token");
   if (!token) return;
-  const hdrs = { "Authorization": "Bearer " + token };
   try {
-    const r = await fetch(BASE + "/scan/status", { headers: hdrs });
+    const r = await authFetch(BASE + "/scan/status");
     const s = await r.json();
     const el = document.getElementById("status-bar");
     if (!el) return;
@@ -45,7 +63,7 @@ async function updateStatus() {
     } else if (s.last_result) {
       el.textContent = `上次扫描: ${s.last_result}`;
     } else {
-      const hr = await fetch(BASE + "/health", { headers: hdrs });
+      const hr = await authFetch(BASE + "/health");
       const hd = await hr.json();
       el.textContent = `服务正常 | 已索引 ${hd.chunks} 段`;
     }

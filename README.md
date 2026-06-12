@@ -75,7 +75,7 @@ nollmkb 默认仅监听 `127.0.0.1`（只有本机能访问），且无需认证
 NOLLMKB_HOST=100.x.x.x
 ```
 
-这样一来只有 Tailscale 虚拟网卡在监听，局域网网卡自动关闭。如需加一层密码保护可选 API 密钥（见场景三）。
+这样一来只有 Tailscale 虚拟网卡在监听，局域网网卡自动关闭。如需加一层访问保护，用 `scripts/gen_token.py` 生成 bearer token（见场景三）。
 
 > **免责声明**：本项目为个人知识管理工具，安全防护有限。开启远程访问后，**请勿**将隐私、涉密、受法规保护的敏感文档放入可检索目录。因不当使用造成的任何数据泄露或损失，项目作者不承担责任。
 
@@ -151,8 +151,6 @@ mykb/                        ← 你建的任意文件夹
 | 在 .env 里写 | 默认 | 说明 |
 |-------------|------|------|
 | `NOLLMKB_HOST=100.x.x.x` | `127.0.0.1` | 远程访问改 Tailscale IP（`tailscale ip -4` 查看）。**不要写 `0.0.0.0`** |
-| `NOLLMKB_API_KEY_HASH=...` | (空) | 加密码保护（生成方法见场景三）|
-| `NOLLMKB_USERS_FILE=/path/` | `auth/users.toml` | WebUI 多用户配置文件 |
 | `NOLLMKB_DOCS_DIR=/path/` | `../inputs` | 文档目录 |
 | `NOLLMKB_KB_DIR=/path/` | `../chromadb_storage` | ChromaDB 向量库存储 |
 | `NOLLMKB_WIKI_DIR=/path/` | `../wiki` | wiki 笔记目录 |
@@ -160,6 +158,7 @@ mykb/                        ← 你建的任意文件夹
 | `NOLLMKB_COLLECTION=nollmkb` | `nollmkb` | ChromaDB collection 名 |
 | `NOLLMKB_LOG_DIR=/path/` | `../logs` | 日志目录 |
 | `NOLLMKB_DEVICE=cpu` | `cuda` | 没显卡改成 `cpu`（不推荐）|
+| `NOLLMKB_USERS_FILE=/path/` | `auth/users.toml` | bearer token 用户配置（用 `scripts/gen_token.py` 生成）|
 
 ### 进阶：修改代码常量
 
@@ -191,15 +190,14 @@ tailscale ip -4        # 拿到 IP（类似 100.x.x.x）
 
 > **为什么不用 `0.0.0.0`**：它会同时在局域网网卡上监听，同网段任何人都能访问。绑定 Tailscale IP 只开放虚拟网卡，更安全。
 
-**场景三：还想加个密码**
+**场景三：还想加个访问保护**
 
 ```bash
-# 生成密码的 hash
-python3 -c "import hashlib; print(hashlib.sha256(b'123').hexdigest())"
-# 把输出的那串字符写入 .env：
-NOLLMKB_API_KEY_HASH=91a73fd...
+# 生成一个 bearer token
+uv run python3 scripts/gen_token.py alice
+# 把输出的 Hash 行写入 auth/users.toml，Token 发给用户
 ```
-请求时加 `-H "Authorization: Bearer 123"`。`.env` 只存 hash，不存密码。
+用户请求时加 `-H "Authorization: Bearer nkb_alice_..."`。`users.toml` 只存 hash，不存 token。
 
 **场景四：没显卡**
 
@@ -243,8 +241,8 @@ nollmkb 自带一个轻量的浏览器界面（零构建，打开即用），适
 
 **首次使用**：
 
-1. `cp auth/users.toml.example auth/users.toml`，然后编辑添加用户（编辑后需重启服务）
-2. 浏览器打开登录页，输入用户名+密码
+1. `uv run python3 scripts/gen_token.py alice` 生成 token，把 hash 写入 `auth/users.toml`（编辑后需重启服务）
+2. 浏览器打开登录页，输入 token
 3. 进入搜索页后，先在"文档管理"页上传文档，点击"开始建库"
 4. 建库完成后即可搜索
 
@@ -350,10 +348,11 @@ curl -X POST http://localhost:8765/wiki/page \
 
 `wiki/` 目录是 LLM 综合的累积笔记层（**仅 markdown 文件**），与 ChromaDB 完全解耦：
 
-- **物理位置**：`wiki/notes/*.md`（默认 `../wiki`，统一目录，env `NOLLMKB_WIKI_DIR` 可配）
-- **协议文件**：`wiki/purpose.md` / `schema.md` / `CLAUDE.md`（可通过 `POST /wiki/init` 一键生成，或从 `wiki_templates/` 复制）
+- **物理位置**：`wiki/{user}/notes/*.md`（默认 `../wiki`，env `NOLLMKB_WIKI_DIR` 可配根目录；多用户架构：协议共享、笔记隔离）
+- **协议文件**：`wiki/shared/{purpose,schema,CLAUDE}.md`（可通过 `POST /wiki/init` 一键生成，或从 `wiki_templates/` 复制到 `wiki/shared/`）
 - **协议远程访问**：远程 agent 通过 `GET /wiki/protocol` 端点读取（本地文件优先，缺失时 fallback nollmkb 内置默认）
 - **元数据**：每页 frontmatter (YAML)，含 title / created / last_verified / sources (nollmkb chunk 引用) / related (wikilinks) / confidence / type / tags
+- **骨架文件**：`wiki/{user}/{index,log}.md`（agent 自觉维护，服务端不做自动更新）
 - **Tag 系统**：自由英文短语，写入时自动规范化 (lowercase + 连字符 + singular + 去重 + strip 中文)
 - **增量缓存**：复用 `hash_db.py` 的三级增量 (mtime+size → hash → 重写)，加 `wiki_state` 顶层 key
 - **安全**：路径防越权（拒绝 `..` / `/` 开头）+ fcntl 文件锁
@@ -386,7 +385,7 @@ Ubuntu + A100 40GB。
 |------|------|------|
 | 显存 | 4 GB | BGE-M3 1.3 GB + Reranker 2.0 GB + PyTorch 运行时开销 |
 | 内存 | 2.3 GB | BM25 索引 + ChromaDB + Reranker + Python 运行 |
-| 磁盘 | ~200 MB | chroma.sqlite3 + file_hashes.json + wiki/notes/ |
+| 磁盘 | ~200 MB | chroma.sqlite3 + file_hashes.json + wiki/ |
 
 ## 为什么轻
 
@@ -439,7 +438,7 @@ nollmkb/
 │   └── index.md / log.md                   (2 骨架)
 ├── static/               WebUI 静态文件 (6 HTML 页面)
 ├── auth/                 用户配置
-│   └── users.toml.example 用户密码模板 (复制为 users.toml)
+│   └── users.toml.example  token hash 配置模板
 ├── .env.example           env 配置示例
 └── LICENSE            MIT
 ```

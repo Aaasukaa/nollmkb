@@ -11,8 +11,7 @@
 <main class="container">
   <h2>nollmkb</h2>
   <form id="login-form">
-    <label>用户名 <input type="text" id="user" required autofocus></label>
-    <label>密码 <input type="password" id="password" required></label>
+    <label>令牌 <input type="text" id="token" placeholder="粘贴管理员给你的 token" required autofocus></label>
     <button type="submit">登录</button>
   </form>
   <p id="error" style="color:red;display:none"></p>
@@ -21,17 +20,16 @@
 const BASE = window.location.origin;
 document.getElementById("login-form").onsubmit = async (e) => {
   e.preventDefault();
-  const u = document.getElementById("user").value;
-  const p = document.getElementById("password").value;
+  const t = document.getElementById("token").value.trim();
   try {
     const r = await fetch(BASE + "/auth/login", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({user: u, password: p})
+      body: JSON.stringify({token: t})
     });
     if (!r.ok) {
       document.getElementById("error").style.display = "block";
-      document.getElementById("error").textContent = r.status === 401 ? "用户名或密码错误" : "登录失败";
+      document.getElementById("error").textContent = "令牌无效";
       return;
     }
     const d = await r.json();

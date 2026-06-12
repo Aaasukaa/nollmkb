@@ -53,9 +53,9 @@ router = APIRouter(prefix="/wiki", tags=["wiki"])
 
 
 # ============== built-in default protocol (OSS-friendly: ships with wiki_templates/ in repo) ==============
-# Priority: local file > nollmkb built-in default
+# Position: local file (WIKI_DIR/shared/) > nollmkb built-in default
 # On first startup with empty WIKI_DIR, call POST /wiki/init to auto-generate default files
-# or manually cp nollmkb/wiki_templates/* to WIKI_DIR
+# or manually cp wiki_templates/{purpose,schema,CLAUDE}.md to WIKI_DIR/shared/
 
 _DEFAULT_PROTOCOL = {
     "purpose": (
@@ -545,6 +545,7 @@ def wiki_graph(request: Request):
     nodes = []
     page_data = {}
     page_paths_by_stem: dict[str, list[str]] = {}  # stem -> [relative path]
+    title_to_path: dict[str, str] = {}             # title -> relative path
 
     for p in pages:
         rel = p.relative_to(wiki_root).as_posix()
@@ -557,6 +558,10 @@ def wiki_graph(request: Request):
         # index stem (filename without .md extension) -> path list
         stem = Path(rel).stem
         page_paths_by_stem.setdefault(stem, []).append(rel)
+        # index title -> path
+        title = fm.get("title", "")
+        if title:
+            title_to_path[title] = rel
         nodes.append({
             "id": rel,
             "title": fm.get("title", rel),
@@ -576,9 +581,12 @@ def wiki_graph(request: Request):
             # 2) bare topic name (same-name file in any directory)
             elif tgt in page_paths_by_stem:
                 resolved = page_paths_by_stem[tgt][0]  # first match
+            # 3) title match
+            elif tgt in title_to_path:
+                resolved = title_to_path[tgt]
             else:
-                # 3) keep as-is, shown as orphan node in graph
-                resolved = tgt_name
+                # unresolvable wikilink (target page doesn't exist) — skip silently
+                continue
             edges.append({
                 "source": src,
                 "target": resolved,

@@ -69,9 +69,6 @@ WIKI_DIR = _resolve_path("NOLLMKB_WIKI_DIR", f"{_DEFAULT_PARENT}/wiki")
 # --- ChromaDB collection name (env override) ---
 COLLECTION_NAME = _resolve_path("NOLLMKB_COLLECTION", "nollmkb")
 
-# --- security ---
-API_KEY_HASH = _resolve_path("NOLLMKB_API_KEY_HASH", "")  # sha256 hash, empty = no auth
-
 # --- user management ---
 USERS_FILE = _resolve_path("NOLLMKB_USERS_FILE", f"{Path(__file__).resolve().parent}/auth/users.toml")
 

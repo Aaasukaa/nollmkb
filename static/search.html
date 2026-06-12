@@ -48,7 +48,7 @@
 // load directory and ext options from /documents
 (async function() {
   try {
-    const r = await fetch(BASE + "/documents", { headers: authHeaders() });
+    const r = await authFetch(BASE + "/documents");
     if (!r.ok) return;
     const d = await r.json();
     const docs = d.documents || [];
@@ -96,9 +96,8 @@ document.getElementById("search-form").onsubmit = async (e) => {
     else { body.bm25 = false; }
     body.rerank = document.getElementById("rerank").checked;
     if (document.getElementById("context").checked) body.context = true;
-    const r = await fetch(BASE + "/query", {
+    const r = await authFetch(BASE + "/query", {
       method: "POST",
-      headers: authHeaders(),
       body: JSON.stringify(body)
     });
     if (!r.ok) {
